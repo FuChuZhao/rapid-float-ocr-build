@@ -1,0 +1,364 @@
+name: android-ci
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Private source repo ref/commit"
+        required: false
+        default: "main"
+        type: string
+      artifact_name:
+        description: "E2E artifact name"
+        required: false
+        default: "e2e-artifacts"
+        type: string
+      e2e_api_level:
+        description: "Android emulator API level for E2E"
+        required: false
+        default: "34"
+        type: string
+      e2e_profile:
+        description: "AVD device profile (avdmanager device name)"
+        required: false
+        default: "pixel_4"
+        type: string
+      e2e_matrix:
+        description: "Run E2E on preset device matrix (pixel_4 + pixel_2)"
+        required: false
+        default: false
+        type: boolean
+      e2e_matrix_profiles:
+        description: "When e2e_matrix=true: JSON array of AVD profiles (avdmanager device name)"
+        required: false
+        default: "[\"pixel_4\",\"pixel_2\"]"
+        type: string
+      e2e_disable_animations:
+        description: "Disable system animations during E2E"
+        required: false
+        default: true
+        type: boolean
+      perf_collect:
+        description: "Collect perf snapshots (gfxinfo/meminfo) during E2E"
+        required: false
+        default: true
+        type: boolean
+      perf_gate:
+        description: "Fail CI when perf hotspots exceed thresholds"
+        required: false
+        default: false
+        type: boolean
+      perf_hotspot_min_frames:
+        description: "Heuristic: minimum frames to evaluate perf hotspots"
+        required: false
+        default: "10"
+        type: string
+      perf_hotspot_p99_ms:
+        description: "Heuristic: p99(ms) threshold for hotspots"
+        required: false
+        default: "600"
+        type: string
+      perf_hotspot_missed_vsync:
+        description: "Heuristic: missedVsync threshold for hotspots"
+        required: false
+        default: "40"
+        type: string
+      perf_hotspot_slow_ui:
+        description: "Heuristic: slowUI threshold for hotspots"
+        required: false
+        default: "40"
+        type: string
+      perf_hotspot_slow_bmp:
+        description: "Heuristic: slowBmp threshold for hotspots"
+        required: false
+        default: "5"
+        type: string
+      perf_gate_min_frames:
+        description: "Gate: minimum frames to evaluate perf gate"
+        required: false
+        default: "10"
+        type: string
+      perf_gate_p99_ms:
+        description: "Gate: p99(ms) threshold to fail"
+        required: false
+        default: "2000"
+        type: string
+      perf_gate_missed_vsync:
+        description: "Gate: missedVsync threshold to fail"
+        required: false
+        default: "80"
+        type: string
+      perf_gate_slow_ui:
+        description: "Gate: slowUI threshold to fail"
+        required: false
+        default: "80"
+        type: string
+      perf_gate_slow_bmp:
+        description: "Gate: slowBmp threshold to fail"
+        required: false
+        default: "15"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: FuChuZhao/rapid-float-ocr-source-20260208072703
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (build repo)
+        uses: actions/checkout@v4
+
+      - name: Checkout (private source repo by SSH deploy key)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.SOURCE_REPO_SSH_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Grant execute permissions
+        run: chmod +x source/gradlew source/tool/ci/e2e_emulator.sh source/tool/ci/prepare_ocr_models.sh
+
+      - name: Prepare OCR model assets
+        working-directory: source
+        run: bash tool/ci/prepare_ocr_models.sh
+
+      - name: Build debug + androidTest + unit tests
+        working-directory: source
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest
+
+      - name: Collect APKs
+        run: |
+          set -euo pipefail
+          mkdir -p dist/apks
+          cp source/app/build/outputs/apk/debug/*.apk dist/apks/
+          cp source/app/build/outputs/apk/androidTest/debug/*.apk dist/apks/
+          find dist/apks -type f | sort
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apks
+          path: dist/apks
+          overwrite: true
+          retention-days: 1
+          if-no-files-found: error
+
+  instrumentation-e2e:
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    if: ${{ inputs.e2e_matrix == false }}
+
+    steps:
+      - name: Checkout (build repo)
+        uses: actions/checkout@v4
+
+      - name: Checkout (private source repo by SSH deploy key)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.SOURCE_REPO_SSH_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Enable KVM
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Grant execute permissions
+        run: chmod +x source/gradlew source/tool/ci/e2e_emulator.sh source/tool/ci/prepare_ocr_models.sh
+
+      - name: Download debug APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: debug-apks
+          path: prebuilt-apks
+
+      - name: Prepare E2E artifact directory
+        run: |
+          mkdir -p artifacts/runtime artifacts/reports
+          echo "E2E bootstrap prepared" > artifacts/runtime/bootstrap.txt
+
+      - name: Run E2E journey on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          E2E_PERF_COLLECT: ${{ inputs.perf_collect }}
+          E2E_PERF_GATE: ${{ inputs.perf_gate }}
+          E2E_PROFILE: ${{ inputs.e2e_profile }}
+          E2E_API_LEVEL: ${{ inputs.e2e_api_level }}
+          PERF_HOTSPOT_MIN_FRAMES: ${{ inputs.perf_hotspot_min_frames }}
+          PERF_HOTSPOT_P99_MS: ${{ inputs.perf_hotspot_p99_ms }}
+          PERF_HOTSPOT_MISSED_VSYNC: ${{ inputs.perf_hotspot_missed_vsync }}
+          PERF_HOTSPOT_SLOW_UI: ${{ inputs.perf_hotspot_slow_ui }}
+          PERF_HOTSPOT_SLOW_BMP: ${{ inputs.perf_hotspot_slow_bmp }}
+          PERF_GATE_MIN_FRAMES: ${{ inputs.perf_gate_min_frames }}
+          PERF_GATE_P99_MS: ${{ inputs.perf_gate_p99_ms }}
+          PERF_GATE_MISSED_VSYNC: ${{ inputs.perf_gate_missed_vsync }}
+          PERF_GATE_SLOW_UI: ${{ inputs.perf_gate_slow_ui }}
+          PERF_GATE_SLOW_BMP: ${{ inputs.perf_gate_slow_bmp }}
+        with:
+          api-level: ${{ inputs.e2e_api_level }}
+          arch: x86_64
+          profile: ${{ inputs.e2e_profile }}
+          cores: 4
+          disable-animations: ${{ inputs.e2e_disable_animations }}
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash ./source/tool/ci/e2e_emulator.sh
+
+      - name: Inspect E2E artifacts dir
+        if: always()
+        run: |
+          echo "PWD=$(pwd)"
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+          find . -maxdepth 4 -type d -name artifacts -print || true
+          if [ -d artifacts ]; then
+            find artifacts -maxdepth 6 -type f | sort | head -n 400
+          else
+            echo "artifacts directory not found in repo root"
+          fi
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: artifacts
+          overwrite: true
+          retention-days: 1
+          if-no-files-found: warn
+
+  instrumentation-e2e-matrix:
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    if: ${{ inputs.e2e_matrix == true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJson(inputs.e2e_matrix_profiles) }}
+
+    steps:
+      - name: Checkout (build repo)
+        uses: actions/checkout@v4
+
+      - name: Checkout (private source repo by SSH deploy key)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.source_ref }}
+          path: source
+          ssh-key: ${{ secrets.SOURCE_REPO_SSH_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Enable KVM
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Grant execute permissions
+        run: chmod +x source/gradlew source/tool/ci/e2e_emulator.sh source/tool/ci/prepare_ocr_models.sh
+
+      - name: Download debug APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: debug-apks
+          path: prebuilt-apks
+
+      - name: Prepare E2E artifact directory
+        run: |
+          mkdir -p artifacts/runtime artifacts/reports
+          echo "E2E bootstrap prepared" > artifacts/runtime/bootstrap.txt
+
+      - name: Run E2E journey on emulator (${{ matrix.profile }})
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          E2E_PERF_COLLECT: ${{ inputs.perf_collect }}
+          E2E_PERF_GATE: ${{ inputs.perf_gate }}
+          E2E_PROFILE: ${{ matrix.profile }}
+          E2E_API_LEVEL: ${{ inputs.e2e_api_level }}
+          PERF_HOTSPOT_MIN_FRAMES: ${{ inputs.perf_hotspot_min_frames }}
+          PERF_HOTSPOT_P99_MS: ${{ inputs.perf_hotspot_p99_ms }}
+          PERF_HOTSPOT_MISSED_VSYNC: ${{ inputs.perf_hotspot_missed_vsync }}
+          PERF_HOTSPOT_SLOW_UI: ${{ inputs.perf_hotspot_slow_ui }}
+          PERF_HOTSPOT_SLOW_BMP: ${{ inputs.perf_hotspot_slow_bmp }}
+          PERF_GATE_MIN_FRAMES: ${{ inputs.perf_gate_min_frames }}
+          PERF_GATE_P99_MS: ${{ inputs.perf_gate_p99_ms }}
+          PERF_GATE_MISSED_VSYNC: ${{ inputs.perf_gate_missed_vsync }}
+          PERF_GATE_SLOW_UI: ${{ inputs.perf_gate_slow_ui }}
+          PERF_GATE_SLOW_BMP: ${{ inputs.perf_gate_slow_bmp }}
+        with:
+          api-level: ${{ inputs.e2e_api_level }}
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          cores: 4
+          disable-animations: ${{ inputs.e2e_disable_animations }}
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash ./source/tool/ci/e2e_emulator.sh
+
+      - name: Inspect E2E artifacts dir
+        if: always()
+        run: |
+          echo "PWD=$(pwd)"
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+          find . -maxdepth 4 -type d -name artifacts -print || true
+          if [ -d artifacts ]; then
+            find artifacts -maxdepth 6 -type f | sort | head -n 400
+          else
+            echo "artifacts directory not found in repo root"
+          fi
+
+      - name: Upload E2E artifacts (${{ matrix.profile }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-${{ matrix.profile }}
+          path: artifacts
+          overwrite: true
+          retention-days: 1
+          if-no-files-found: warn
+
