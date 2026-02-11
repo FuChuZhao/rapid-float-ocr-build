@@ -134,24 +134,11 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - name: Grant execute permissions
-        run: chmod +x source/gradlew source/tool/ci/e2e_emulator.sh source/tool/ci/prepare_ocr_models.sh
-
-      - name: Prepare OCR model assets
+      - name: Build (private repo entrypoint)
         working-directory: source
-        run: bash tool/ci/prepare_ocr_models.sh
-
-      - name: Build debug + androidTest + unit tests
-        working-directory: source
-        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest
-
-      - name: Collect APKs
         run: |
           set -euo pipefail
-          mkdir -p dist/apks
-          cp source/app/build/outputs/apk/debug/*.apk dist/apks/
-          cp source/app/build/outputs/apk/androidTest/debug/*.apk dist/apks/
-          find dist/apks -type f | sort
+          bash tool/ci/build_android.sh --out-dir "${GITHUB_WORKSPACE}/dist/apks"
 
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
@@ -196,19 +183,11 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Grant execute permissions
-        run: chmod +x source/gradlew source/tool/ci/e2e_emulator.sh source/tool/ci/prepare_ocr_models.sh
-
       - name: Download debug APKs
         uses: actions/download-artifact@v4
         with:
           name: debug-apks
           path: prebuilt-apks
-
-      - name: Prepare E2E artifact directory
-        run: |
-          mkdir -p artifacts/runtime artifacts/reports
-          echo "E2E bootstrap prepared" > artifacts/runtime/bootstrap.txt
 
       - name: Run E2E journey on emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -298,19 +277,11 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Grant execute permissions
-        run: chmod +x source/gradlew source/tool/ci/e2e_emulator.sh source/tool/ci/prepare_ocr_models.sh
-
       - name: Download debug APKs
         uses: actions/download-artifact@v4
         with:
           name: debug-apks
           path: prebuilt-apks
-
-      - name: Prepare E2E artifact directory
-        run: |
-          mkdir -p artifacts/runtime artifacts/reports
-          echo "E2E bootstrap prepared" > artifacts/runtime/bootstrap.txt
 
       - name: Run E2E journey on emulator (${{ matrix.profile }})
         uses: reactivecircus/android-emulator-runner@v2
@@ -361,4 +332,3 @@ jobs:
           overwrite: true
           retention-days: 1
           if-no-files-found: warn
-
