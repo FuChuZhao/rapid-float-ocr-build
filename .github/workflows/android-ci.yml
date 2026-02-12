@@ -98,6 +98,11 @@ on:
         required: false
         default: "15"
         type: string
+      ocr_model_pack:
+        description: "OCR model pack to bundle into APK (v3 or v5)"
+        required: false
+        default: "v3"
+        type: string
 
 permissions:
   contents: read
@@ -106,7 +111,7 @@ env:
   SOURCE_REPO: FuChuZhao/rapid-float-ocr-source-20260208072703
 
 concurrency:
-  group: android-ci-${{ github.ref }}
+  group: android-ci-${{ inputs.source_ref }}-${{ inputs.ocr_model_pack }}-${{ inputs.e2e_api_level }}-${{ inputs.e2e_profile }}-${{ inputs.e2e_matrix }}
   cancel-in-progress: true
 
 jobs:
@@ -136,6 +141,8 @@ jobs:
 
       - name: Build (private repo entrypoint)
         working-directory: source
+        env:
+          OCR_MODEL_PACK: ${{ inputs.ocr_model_pack }}
         run: |
           set -euo pipefail
           bash tool/ci/build_android.sh --out-dir "${GITHUB_WORKSPACE}/dist/apks"
