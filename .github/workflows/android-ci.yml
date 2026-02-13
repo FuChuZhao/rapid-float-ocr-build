@@ -98,6 +98,11 @@ on:
         required: false
         default: "15"
         type: string
+      perf_gate_end_pss_mb:
+        description: "Gate: END pss(MB) threshold to fail (0 disables)"
+        required: false
+        default: "420"
+        type: string
       ocr_model_pack:
         description: "OCR model pack to bundle into APK (v3 or v5)"
         required: false
@@ -213,6 +218,7 @@ jobs:
           PERF_GATE_MISSED_VSYNC: ${{ inputs.perf_gate_missed_vsync }}
           PERF_GATE_SLOW_UI: ${{ inputs.perf_gate_slow_ui }}
           PERF_GATE_SLOW_BMP: ${{ inputs.perf_gate_slow_bmp }}
+          PERF_GATE_END_PSS_MB: ${{ inputs.perf_gate_end_pss_mb }}
         with:
           api-level: ${{ inputs.e2e_api_level }}
           arch: x86_64
@@ -307,6 +313,7 @@ jobs:
           PERF_GATE_MISSED_VSYNC: ${{ inputs.perf_gate_missed_vsync }}
           PERF_GATE_SLOW_UI: ${{ inputs.perf_gate_slow_ui }}
           PERF_GATE_SLOW_BMP: ${{ inputs.perf_gate_slow_bmp }}
+          PERF_GATE_END_PSS_MB: ${{ inputs.perf_gate_end_pss_mb }}
         with:
           api-level: ${{ inputs.e2e_api_level }}
           arch: x86_64
