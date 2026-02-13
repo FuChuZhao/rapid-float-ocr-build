@@ -103,6 +103,31 @@ on:
         required: false
         default: "420"
         type: string
+      latency_gate:
+        description: "Fail CI when key interaction latency exceeds thresholds"
+        required: false
+        default: false
+        type: boolean
+      latency_gate_quick_ocr_complete_ms:
+        description: "Gate: quick_ocr_complete latency(ms) threshold to fail (0 disables)"
+        required: false
+        default: "12000"
+        type: string
+      latency_gate_floating_first_feedback_ms:
+        description: "Gate: floating_first_feedback latency(ms) threshold to fail (0 disables)"
+        required: false
+        default: "3000"
+        type: string
+      latency_gate_floating_terminal_panel_ms:
+        description: "Gate: floating_terminal_panel latency(ms) threshold to fail (0 disables)"
+        required: false
+        default: "20000"
+        type: string
+      latency_gate_region_ocr_complete_ms:
+        description: "Gate: region_ocr_complete latency(ms) threshold to fail (0 disables)"
+        required: false
+        default: "12000"
+        type: string
       ocr_model_pack:
         description: "OCR model pack to bundle into APK (v3 or v5)"
         required: false
@@ -206,6 +231,7 @@ jobs:
         env:
           E2E_PERF_COLLECT: ${{ inputs.perf_collect }}
           E2E_PERF_GATE: ${{ inputs.perf_gate }}
+          E2E_LATENCY_GATE: ${{ inputs.latency_gate }}
           E2E_PROFILE: ${{ inputs.e2e_profile }}
           E2E_API_LEVEL: ${{ inputs.e2e_api_level }}
           PERF_HOTSPOT_MIN_FRAMES: ${{ inputs.perf_hotspot_min_frames }}
@@ -219,6 +245,10 @@ jobs:
           PERF_GATE_SLOW_UI: ${{ inputs.perf_gate_slow_ui }}
           PERF_GATE_SLOW_BMP: ${{ inputs.perf_gate_slow_bmp }}
           PERF_GATE_END_PSS_MB: ${{ inputs.perf_gate_end_pss_mb }}
+          LATENCY_GATE_QUICK_OCR_COMPLETE_MS: ${{ inputs.latency_gate_quick_ocr_complete_ms }}
+          LATENCY_GATE_FLOATING_FIRST_FEEDBACK_MS: ${{ inputs.latency_gate_floating_first_feedback_ms }}
+          LATENCY_GATE_FLOATING_TERMINAL_PANEL_MS: ${{ inputs.latency_gate_floating_terminal_panel_ms }}
+          LATENCY_GATE_REGION_OCR_COMPLETE_MS: ${{ inputs.latency_gate_region_ocr_complete_ms }}
         with:
           api-level: ${{ inputs.e2e_api_level }}
           arch: x86_64
@@ -301,6 +331,7 @@ jobs:
         env:
           E2E_PERF_COLLECT: ${{ inputs.perf_collect }}
           E2E_PERF_GATE: ${{ inputs.perf_gate }}
+          E2E_LATENCY_GATE: ${{ inputs.latency_gate }}
           E2E_PROFILE: ${{ matrix.profile }}
           E2E_API_LEVEL: ${{ inputs.e2e_api_level }}
           PERF_HOTSPOT_MIN_FRAMES: ${{ inputs.perf_hotspot_min_frames }}
@@ -314,6 +345,10 @@ jobs:
           PERF_GATE_SLOW_UI: ${{ inputs.perf_gate_slow_ui }}
           PERF_GATE_SLOW_BMP: ${{ inputs.perf_gate_slow_bmp }}
           PERF_GATE_END_PSS_MB: ${{ inputs.perf_gate_end_pss_mb }}
+          LATENCY_GATE_QUICK_OCR_COMPLETE_MS: ${{ inputs.latency_gate_quick_ocr_complete_ms }}
+          LATENCY_GATE_FLOATING_FIRST_FEEDBACK_MS: ${{ inputs.latency_gate_floating_first_feedback_ms }}
+          LATENCY_GATE_FLOATING_TERMINAL_PANEL_MS: ${{ inputs.latency_gate_floating_terminal_panel_ms }}
+          LATENCY_GATE_REGION_OCR_COMPLETE_MS: ${{ inputs.latency_gate_region_ocr_complete_ms }}
         with:
           api-level: ${{ inputs.e2e_api_level }}
           arch: x86_64
