@@ -116,7 +116,7 @@ on:
       ocr_model_pack:
         description: "OCR model pack to bundle into APK (v3 or v5)"
         required: false
-        default: "v3"
+        default: "v5"
         type: string
 
 permissions:
